@@ -2,8 +2,8 @@
 session_start();
 
 $servername = "localhost";
-$username = "";
-$password = "";
+$username = "root";
+$password = "csit355pass";
 $dbname = "libraryDB";
 
 $conn = new mysqli($servername, $username, $password, $dbname);
@@ -81,51 +81,10 @@ $conn->close();
             color: green;
             font-weight: bold;
         }
-        .borrow-button, .return-button {
-            padding: 5px 10px;
-            margin: 5px;
-            border: none;
-            cursor: pointer;
-            border-radius: 3px;
-        }
-        .borrow-button {
-            background-color: #28a745;
-            color: white;
-        }
-        .borrow-button:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
-        }
-        .return-button {
-            background-color: #dc3545;
-            color: white;
-        }
-        .message {
-            text-align: center;
-            margin: 10px 0;
-            padding: 10px;
-            border-radius: 5px;
-        }
-        .success {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        .error {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
     </style>
 </head>
 <body>
     <?php include 'navbar.php';?>
-<!-- Display success/error messages -->
-<?php if (isset($_GET['message'])): ?>
-    <div class="message success"><?php echo htmlspecialchars($_GET['message']); ?></div>
-<?php endif; ?>
-<?php if (isset($_GET['error'])): ?>
-    <div class="message error"><?php echo htmlspecialchars($_GET['error']); ?></div>
-<?php endif; ?>
-
     <div class="search-form">
         <form method="POST">
             <input type="text" name="search" class="search-input" placeholder="Search by title, author, or publisher" value="<?php echo htmlspecialchars($search); ?>">
@@ -143,18 +102,6 @@ $conn->close();
                     <br>Available Copies: <span class="available"><?php echo $book['available_copies']; ?></span>
                 </li>
             <?php endwhile; ?>
-    <br>
-        <!-- Borrow Button -->
-<form action="borrowBook.php" method="POST" style="display:inline;">
-    <input type="hidden" name="book_id" value="<?php echo $book['book_id']; ?>">
-    <button type="submit" class="borrow-button" <?php echo ($book['available_copies'] <= 0) ? 'disabled' : ''; ?>>Borrow</button>
-</form>
-<!-- Return Button -->
-<form action="returnBook.php" method="POST" style="display:inline;">
-    <input type="hidden" name="book_id" value="<?php echo $book['book_id']; ?>">
-    <button type="submit" class="return-button">Return</button>
-</form>
-          <?php endwhile; ?>
         <?php else: ?>
             <li>No books available matching your search.</li>
         <?php endif; ?>

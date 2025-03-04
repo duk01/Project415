@@ -100,6 +100,17 @@ CREATE TABLE Transactions (
     FOREIGN KEY (member_id) REFERENCES Members(member_id) ON DELETE CASCADE,
     FOREIGN KEY (librarian_id) REFERENCES Librarians(librarian_id) ON DELETE SET NULL
 );
+CREATE TABLE BorrowedBooks (
+    borrowed_id INT AUTO_INCREMENT PRIMARY KEY,
+    member_id INT NOT NULL,
+    book_id INT NOT NULL,
+    borrow_date DATE NOT NULL,
+    return_date DATE,
+    status ENUM('Borrowed', 'Returned') DEFAULT 'Borrowed',
+    FOREIGN KEY (member_id) REFERENCES Members(member_id) ON DELETE CASCADE,
+    FOREIGN KEY (book_id) REFERENCES Books(book_id) ON DELETE CASCADE
+);
+
 
 
 INSERT INTO Transactions (book_id, member_id, librarian_id, issue_date, due_date, return_date, status)
