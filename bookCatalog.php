@@ -42,6 +42,22 @@ $conn->close();
         h2 {
             text-align: center;
         }
+        .nav-bar {
+            display: flex;
+            justify-content: flex-end;
+            padding: 10px;
+            background: white;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+        }
+        .login-button {
+            padding: 10px 15px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            border-radius: 5px;
+        }
         .search-form {
             text-align: center;
             margin-bottom: 20px;
@@ -87,13 +103,13 @@ $conn->close();
     <?php include 'navbar.php';?>
     <div class="search-form">
         <form method="POST">
-            <input type="text" name="search" class="search-input" placeholder="Search by title, author, or publisher" value="<?php echo htmlspecialchars($search); ?>">
+            <input type="text" name="search" class="search-input" placeholder="Search by title, author, or publisher" value="<?php echo isset($search) ? htmlspecialchars($search) : ''; ?>">
             <button type="submit" class="search-button">Search</button>
         </form>
     </div>
 
     <ul class="book-list">
-        <?php if ($result->num_rows > 0): ?>
+        <?php if (isset($result) && $result->num_rows > 0): ?>
             <?php while ($book = $result->fetch_assoc()): ?>
                 <li class="book-item">
                     <span class="book-title"><?php echo htmlspecialchars($book['title']); ?></span> by 

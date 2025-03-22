@@ -21,6 +21,9 @@
         #navbarCollapse {
             text-align: center;
         }
+        #loginButton {
+            text-align: right;
+        }
     </style>
 </head>
 <body>
@@ -38,6 +41,9 @@
                     <a href="bookCatalog.php" class="nav-item nav-link">Book Catalog</a>
                     <a href="borrowReturn.php" class="nav-item nav-link">Borrow/Return</a>
                 </div>
+            </div>
+            <div class="loginButton" id="loginButton">
+                <a href="userLogin.php" class="login-button">Login</a>
             </div>
         </div>
     </nav>

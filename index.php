@@ -77,6 +77,16 @@ session_start();
             margin-top: 30px;
         }
 
+        .login-button {
+            padding: 10px 15px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+
         @media (max-width: 768px) {
             .frontP {
                 font-size: 1.5rem;
