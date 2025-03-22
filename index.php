@@ -125,9 +125,9 @@ session_start();
             <div class="col-md-4">
                 <div class="feature-card p-4">
                     <div class="feature-icon">📜</div>
-                    <h4>Placeholder</h4>
+                    <h4>FAQ</h4>
                     <p>----</p>
-                    <a href="placeholder.php" class="btn btn-danger">placeholder</a>
+                    <a href="FAQ.php" class="btn btn-danger">FAQ</a>
                 </div>
             </div>
         </div>
