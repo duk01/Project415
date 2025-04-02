@@ -1,132 +1,135 @@
 <?php
 session_start();
+require_once 'database.php';
 
-$servername = "localhost";
-$username = "root";
-$password = "csit355pass";
-$dbname = "libraryDB";
-
-if (!isset($_SESSION['email'])) {
-    header('Location: userLogin.php?error=Please login first');
+if (!isset($_SESSION['member_id'])) {
+    header('Location: userLogin.php');
     exit();
 }
 
-$member_email = $_SESSION['email'];
+$member_id = $_SESSION['member_id'];
+$message = "";
 
-$mysqli = new mysqli($servername, $username, $password, $dbname);
+// Google Books Borrow Handling
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['google_id'])) {
+    $google_id = $_POST['google_id'];
+    $title = $_POST['title'] ?? 'Untitled';
+    $author = $_POST['author'] ?? 'Unknown';
 
-if ($mysqli->connect_error) {
-    die("Connection failed: " . $mysqli->connect_error);
-}
-
-$query = "SELECT member_id FROM Members WHERE email = ?";
-$stmt = $mysqli->prepare($query);
-$stmt->bind_param('s', $member_email);
-$stmt->execute();
-$result = $stmt->get_result();
-$member = $result->fetch_assoc();
-
-if (!$member) {
-    die("Member not found.");
-}
-
-$member_id = $member['member_id'];
-
-$query = "SELECT bb.borrowed_id, b.title AS book_name, bb.borrow_date, bb.return_date, bb.status 
-          FROM BorrowedBooks bb
-          JOIN Books b ON bb.book_id = b.book_id
-          WHERE bb.member_id = ? AND bb.status = 'Borrowed'";
-$stmt = $mysqli->prepare($query);
-$stmt->bind_param('i', $member_id);
-$stmt->execute();
-$result = $stmt->get_result();
-
-if ($result->num_rows > 0) {
-    while ($row = $result->fetch_assoc()) {
-        echo "Borrowed ID: " . $row['borrowed_id'] . "<br>";
-        echo "Book Name: " . $row['book_name'] . "<br>";
-        echo "Borrow Date: " . $row['borrow_date'] . "<br>";
-        echo "Return Date: " . $row['return_date'] . "<br>";
-        echo "Status: " . $row['status'] . "<br>";
-        echo "<form method='post' action=''>
-                <input type='hidden' name='borrowed_id' value='" . $row['borrowed_id'] . "'>
-                <button type='submit' name='return_book'>Return Book</button>
-              </form>";
-        echo "<hr>";
-    }
-} else {
-    echo "No books currently borrowed.";
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_name'])) {
-    $book_name = $_POST['book_name'];
-
-    $query = "SELECT book_id, title, author, available_copies FROM Books WHERE title LIKE ?";
-    $stmt = $mysqli->prepare($query);
-    $book_name_like = '%' . $book_name . '%';
-    $stmt->bind_param('s', $book_name_like);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    // Check if the book exists
+    $check_stmt = $conn->prepare("SELECT book_id FROM Books WHERE google_id = ?");
+    $check_stmt->bind_param("s", $google_id);
+    $check_stmt->execute();
+    $result = $check_stmt->get_result();
 
     if ($result->num_rows > 0) {
         $book = $result->fetch_assoc();
-        if ($book['available_copies'] > 0) {
-            $book_id = $book['book_id'];
-            $borrow_date = date('Y-m-d');
-            $return_date = date('Y-m-d', strtotime('+14 days'));
+        $book_id = $book['book_id'];
+    } else {
+        $insert_stmt = $conn->prepare("INSERT INTO Books (google_id, title, author, availability) VALUES (?, ?, ?, 'available')");
+        $insert_stmt->bind_param("sss", $google_id, $title, $author);
+        $insert_stmt->execute();
+        $book_id = $conn->insert_id;
+    }
 
-            $query = "INSERT INTO BorrowedBooks (member_id, book_id, borrow_date, return_date, status) 
-                      VALUES (?, ?, ?, ?, 'Borrowed')";
-            $stmt = $mysqli->prepare($query);
-            $stmt->bind_param('iiss', $member_id, $book_id, $borrow_date, $return_date);
-            if ($stmt->execute()) {
-                $query = "UPDATE Books SET available_copies = available_copies - 1 WHERE book_id = ?";
-                $stmt = $mysqli->prepare($query);
-                $stmt->bind_param('i', $book_id);
-                $stmt->execute();
+    $_POST['book_id'] = $book_id;
+    $_POST['borrow'] = true;
+}
 
-                echo "Successfully borrowed the book: " . $book['title'];
-            } else {
-                echo "Error borrowing the book.";
-            }
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (isset($_POST['borrow']) && !empty($_POST['book_id'])) {
+        $book_id = $_POST['book_id'];
+
+        // Prevent duplicate borrow
+        $check_existing = $conn->prepare("SELECT * FROM Transactions WHERE member_id = ? AND book_id = ? AND borrowStatus = 'Issued'");
+        $check_existing->bind_param("ii", $member_id, $book_id);
+        $check_existing->execute();
+        $existing = $check_existing->get_result();
+
+        if ($existing->num_rows > 0) {
+            $message = "⚠️ You already have this book borrowed. Please return it first.";
         } else {
-            echo "Sorry, no copies available for this book.";
-        }
-    } else {
-        echo "Book not found!";
-    }
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['return_book'])) {
-    $borrowed_id = $_POST['borrowed_id'];
-
-    $query = "UPDATE BorrowedBooks SET status = 'Returned' WHERE borrowed_id = ?";
-    $stmt = $mysqli->prepare($query);
-    $stmt->bind_param('i', $borrowed_id);
-    if ($stmt->execute()) {
-        $query = "SELECT book_id FROM BorrowedBooks WHERE borrowed_id = ?";
-        $stmt = $mysqli->prepare($query);
-        $stmt->bind_param('i', $borrowed_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $book = $result->fetch_assoc();
-        
-        if ($book) {
-            $query = "UPDATE Books SET available_copies = available_copies + 1 WHERE book_id = ?";
-            $stmt = $mysqli->prepare($query);
-            $stmt->bind_param('i', $book['book_id']);
+            // Check availability
+            $stmt = $conn->prepare("SELECT availability FROM Books WHERE book_id = ?");
+            $stmt->bind_param("i", $book_id);
             $stmt->execute();
-            
-            echo "Successfully returned the book.";
+            $result = $stmt->get_result();
+            $book = $result->fetch_assoc();
+
+            if ($book && $book['availability'] === 'available') {
+                $borrow_stmt = $conn->prepare("INSERT INTO BorrowedBooks (member_id, book_id, borrow_date) VALUES (?, ?, NOW())");
+                $borrow_stmt->bind_param("ii", $member_id, $book_id);
+                $borrow_stmt->execute();
+
+                $update_stmt = $conn->prepare("UPDATE Books SET availability = 'unavailable' WHERE book_id = ?");
+                $update_stmt->bind_param("i", $book_id);
+                $update_stmt->execute();
+
+                // Create Transaction
+                $transaction_stmt = $conn->prepare("INSERT INTO Transactions (book_id, member_id, librarian_id, issue_date, due_date, borrowStatus) VALUES (?, ?, NULL, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 14 DAY), 'Issued')");
+                $transaction_stmt->bind_param("ii", $book_id, $member_id);
+                $transaction_stmt->execute();
+
+                $message = "✅ Book borrowed successfully!";
+            } else {
+                $message = "⚠️ Book is not available or doesn't exist.";
+            }
         }
-    } else {
-        echo "Error returning the book.";
+    }
+
+    if (isset($_POST['return']) && !empty($_POST['book_id'])) {
+        $book_id = $_POST['book_id'];
+
+        $return_stmt = $conn->prepare("DELETE FROM BorrowedBooks WHERE member_id = ? AND book_id = ?");
+        $return_stmt->bind_param("ii", $member_id, $book_id);
+        $return_stmt->execute();
+
+        $update_stmt = $conn->prepare("UPDATE Books SET availability = 'available' WHERE book_id = ?");
+        $update_stmt->bind_param("i", $book_id);
+        $update_stmt->execute();
+
+        // Update Transaction
+        $update_trans = $conn->prepare("UPDATE Transactions SET return_date = CURDATE(), borrowStatus = 'Returned' WHERE member_id = ? AND book_id = ? AND borrowStatus = 'Issued' ORDER BY issue_date DESC LIMIT 1");
+        $update_trans->bind_param("ii", $member_id, $book_id);
+        $update_trans->execute();
+
+        $message = "✅ Book returned successfully!";
     }
 }
+
+$borrowed_query = $conn->prepare("SELECT B.book_id, B.title, B.author, BB.borrow_date FROM BorrowedBooks BB JOIN Books B ON BB.book_id = B.book_id WHERE BB.member_id = ? ORDER BY BB.borrow_date DESC");
+$borrowed_query->bind_param("i", $member_id);
+$borrowed_query->execute();
+$borrowed_books = $borrowed_query->get_result();
 ?>
 
-<form method="post" action="">
-    <label for="book_name">Enter Book Name:</label>
-    <input type="text" name="book_name" required>
-    <button type="submit">Borrow Book</button>
-</form>
+<!DOCTYPE html>
+<html>
+<head><title>Borrow/Return Books</title></head>
+<body>
+<?php include 'navbar.php'; ?>
+<h2>Your Borrowed Books</h2>
+<?php if (!empty($message)): ?><p><strong><?= htmlspecialchars($message) ?></strong></p><?php endif; ?>
+
+<?php if ($borrowed_books->num_rows > 0): ?>
+<table border="1" cellpadding="5">
+    <tr><th>Title</th><th>Author</th><th>Borrow Date</th><th>Return</th></tr>
+    <?php while ($row = $borrowed_books->fetch_assoc()): ?>
+    <tr>
+        <td><?= htmlspecialchars($row['title']) ?></td>
+        <td><?= htmlspecialchars($row['author']) ?></td>
+        <td><?= htmlspecialchars($row['borrow_date']) ?></td>
+        <td>
+            <form method="post">
+                <input type="hidden" name="book_id" value="<?= $row['book_id'] ?>">
+                <button type="submit" name="return">Return</button>
+            </form>
+        </td>
+    </tr>
+    <?php endwhile; ?>
+</table>
+<?php else: ?>
+<p>You haven't borrowed any books yet.</p>
+<?php endif; ?>
+</body>
+</html>
