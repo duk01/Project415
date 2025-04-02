@@ -3,7 +3,7 @@ session_start();
 
 $servername = "localhost";
 $username = "root";
-$password = "csit355pass";
+$password = "";
 $dbname = "libraryDB";
 $conn = new mysqli($servername, $username, $password, $dbname);
 
