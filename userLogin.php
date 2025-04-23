@@ -4,58 +4,96 @@ require_once 'database.php';
 
 $error = "";
 
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $email = $_POST['email'] ?? '';
-    $password = $_POST['password'] ?? '';
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    $email = filter_input(INPUT_POST, 'email', FILTER_VALIDATE_EMAIL);
+    $password = $_POST['password'];
 
-    // Check user credentials
-    $stmt = $conn->prepare("SELECT * FROM members WHERE email = ? AND password = ?");
-    $stmt->bind_param("ss", $email, $password); // Use hashed passwords in real apps
+    if (!$email || empty($password)) {
+        header("Location: userLogin.php?error=Invalid login credentials");
+        exit;
+    }
+
+    // Hash input password to match SHA2 hashes in the DB
+    $password = hash('sha256', $password);
+
+    $stmt = $conn->prepare("SELECT name, password, member_id FROM Members WHERE email = ? AND password = ?");
+    $stmt->bind_param("ss", $email, $password);
     $stmt->execute();
     $result = $stmt->get_result();
 
-    if ($result->num_rows === 1) {
-        $row = $result->fetch_assoc();
-
-        // ✅ Set consistent session keys
+    if ($result->num_rows > 0) {
+        $user = $result->fetch_assoc();
         $_SESSION['email'] = $email;
-        $_SESSION['member_id'] = $row['member_id'];
+        $_SESSION['name'] = $user['name'] ?? '';
+        $_SESSION['member_id'] = $user['member_id'];
+        unset($_SESSION['is_librarian']);
 
-        // ✅ Redirect to borrowReturn.php
-        header("Location: borrowReturn.php");
-        exit();
+
+        header("Location: index.php");
+        exit;
     } else {
-        $error = "Invalid email or password.";
+        header("Location: userLogin.php?error=Invalid email or password");
+        exit;
     }
 }
+
+$conn->close();
 ?>
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User Login</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .login-container {
+            padding: 20px;
+            width: 300px;
+            text-align: center;
+        }
+        input[type="email"], input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #007BFF;
+            border: none;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .error {
+            color: red;
+        }
+    </style>
 </head>
 <body>
-    <?php include 'navbar.php'; ?>
-
-    <h2>User Login</h2>
-
-    <form method="post" action="">
-        <label for="email">Email:</label><br>
-        <input type="email" name="email" id="email" required><br><br>
-
-        <label for="password">Password:</label><br>
-        <input type="password" name="password" id="password" required><br><br>
-
-        <input type="submit" value="Login">
-    </form>
-
-    <?php if (!empty($error)): ?>
-        <p style="color: red;"><?= htmlspecialchars($error) ?></p>
-    <?php endif; ?>
-
-    <?php if (isset($_SESSION['member_id'])): ?>
-        <p style="color: gray;">DEBUG: Logged in as Member ID <?= $_SESSION['member_id'] ?></p>
-    <?php endif; ?>
+    <div class="login-container">
+        <h2>User Login</h2>
+        <?php if (!empty($_GET['error'])) echo "<p class='error'>{$_GET['error']}</p>"; ?>
+        <form action="" method="POST">
+            <input type="email" name="email" placeholder="Email" required>
+            <input type="password" name="password" placeholder="Password" required>
+            <button type="submit">Login</button>
+        </form>
+        <a href="empLogin.php">Staff Login</a>
+        <p><a href="signup.php">Sign up here</a></p>
+    </div>
 </body>
 </html>

@@ -126,7 +126,7 @@ session_start();
                 <div class="feature-card p-4">
                     <div class="feature-icon">📜</div>
                     <h4>FAQ</h4>
-                    <p>----</p>
+                    <p>Ask questions</p>
                     <a href="FAQ.php" class="btn btn-danger">FAQ</a>
                 </div>
             </div>

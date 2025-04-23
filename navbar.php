@@ -55,7 +55,7 @@ if (session_status() === PHP_SESSION_NONE) {
                 <span class="text-white me-3">Welcome, <?php echo htmlspecialchars($_SESSION['email']); ?></span>
                 <a href="logout.php" class="btn btn-light btn-sm">Logout</a>
             <?php else: ?>
-                <a href="userLogin.php" class="login-button">Login</a>
+                <a href="userLogin.php" class="login-button btn btn-light btn-sm">Login</a>
             <?php endif; ?>
         </div>
     </div>
