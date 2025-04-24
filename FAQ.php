@@ -8,7 +8,7 @@ if (isset($_SESSION['name']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $question_id = $_POST['question_id'];
         $answer = $_POST['answer'];
 
-        $stmt = $conn->prepare("UPDATE Questions SET answer = ? WHERE id = ?");
+        $stmt = $conn->prepare("UPDATE questions SET answer = ? WHERE id = ?");
         $stmt->bind_param("si", $answer, $question_id);
         $stmt->execute();
     }
@@ -16,7 +16,7 @@ if (isset($_SESSION['name']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['delete_question']) && !empty($_POST['question_id'])) {
         $question_id = $_POST['question_id'];
 
-        $stmt = $conn->prepare("DELETE FROM Questions WHERE id = ?");
+        $stmt = $conn->prepare("DELETE FROM questions WHERE id = ?");
         $stmt->bind_param("i", $question_id);
         $stmt->execute();
     }
@@ -26,7 +26,7 @@ if (isset($_SESSION['name']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
 if (isset($_SESSION['member_id']) && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['user_question'])) {
     $question = trim($_POST['user_question']);
     if (!empty($question)) {
-        $stmt = $conn->prepare("INSERT INTO Questions (member_id, question) VALUES (?, ?)");
+        $stmt = $conn->prepare("INSERT INTO questions (member_id, question) VALUES (?, ?)");
         $stmt->bind_param("is", $_SESSION['member_id'], $question);
         $stmt->execute();
     }
@@ -106,7 +106,7 @@ if (isset($_SESSION['member_id']) && $_SERVER['REQUEST_METHOD'] === 'POST' && is
 <div class="container">
     <!-- Make Question public -->
     <?php
-    $result = $conn->query("SELECT question, answer FROM Questions WHERE answer IS NOT NULL ORDER BY submitted_at DESC");
+    $result = $conn->query("SELECT question, answer FROM questions WHERE answer IS NOT NULL ORDER BY submitted_at DESC");
     if ($result && $result->num_rows > 0):
         while ($row = $result->fetch_assoc()):
     ?>
@@ -134,7 +134,7 @@ if (isset($_SESSION['member_id']) && $_SERVER['REQUEST_METHOD'] === 'POST' && is
     <?php if (!empty($_SESSION['is_librarian'])): ?>
         <h3>Unanswered Questions:</h3>
         <?php
-        $unanswered = $conn->query("SELECT id, question FROM Questions WHERE answer IS NULL ORDER BY submitted_at DESC");
+        $unanswered = $conn->query("SELECT id, question FROM questions WHERE answer IS NULL ORDER BY submitted_at DESC");
         while ($row = $unanswered->fetch_assoc()):
         ?>
             <div class="faq-box">
