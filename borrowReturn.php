@@ -1,132 +1,273 @@
 <?php
 session_start();
+require_once 'database.php';
 
-$servername = "localhost";
-$username = "root";
-$password = "csit355pass";
-$dbname = "libraryDB";
-
-if (!isset($_SESSION['email'])) {
-    header('Location: userLogin.php?error=Please login first');
+// Ensure user is logged in
+if (!isset($_SESSION['member_id']) && !isset($_SESSION['name'])) {
+    header('Location: userLogin.php');
     exit();
 }
 
-$member_email = $_SESSION['email'];
+$isMember = isset($_SESSION['member_id']);
+$isLibrarian = isset($_SESSION['name']);
+$member_id = $isMember ? $_SESSION['member_id'] : null;
+$message = "";
 
-$mysqli = new mysqli($servername, $username, $password, $dbname);
+// Handle fine payment
+if ($isMember && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pay_fine'])) {
+    $book_id = $_POST['book_id'];
 
-if ($mysqli->connect_error) {
-    die("Connection failed: " . $mysqli->connect_error);
-}
+    $fine_query = $conn->prepare("SELECT fine_id, fine_amount FROM Fines WHERE member_id = ? AND book_id = ? AND paid_status = 'unpaid' ORDER BY created_at DESC LIMIT 1");
+    $fine_query->bind_param("ii", $member_id, $book_id);
+    $fine_query->execute();
+    $fine_result = $fine_query->get_result();
 
-$query = "SELECT member_id FROM Members WHERE email = ?";
-$stmt = $mysqli->prepare($query);
-$stmt->bind_param('s', $member_email);
-$stmt->execute();
-$result = $stmt->get_result();
-$member = $result->fetch_assoc();
+    if ($fine_result->num_rows > 0) {
+        $fine = $fine_result->fetch_assoc();
+        $fine_id = $fine['fine_id'];
+        $fine_amount = $fine['fine_amount'];
 
-if (!$member) {
-    die("Member not found.");
-}
+        $balance_check = $conn->prepare("SELECT redhawk_balance FROM Members WHERE member_id = ?");
+        $balance_check->bind_param("i", $member_id);
+        $balance_check->execute();
+        $balance_result = $balance_check->get_result();
+        $balance = $balance_result->fetch_assoc()['redhawk_balance'];
 
-$member_id = $member['member_id'];
+        if ($balance >= $fine_amount) {
+            $conn->begin_transaction();
+            $update_fine = $conn->prepare("UPDATE Fines SET paid_status = 'paid' WHERE fine_id = ?");
+            $update_fine->bind_param("i", $fine_id);
+            $update_fine->execute();
 
-$query = "SELECT bb.borrowed_id, b.title AS book_name, bb.borrow_date, bb.return_date, bb.status 
-          FROM BorrowedBooks bb
-          JOIN Books b ON bb.book_id = b.book_id
-          WHERE bb.member_id = ? AND bb.status = 'Borrowed'";
-$stmt = $mysqli->prepare($query);
-$stmt->bind_param('i', $member_id);
-$stmt->execute();
-$result = $stmt->get_result();
+            $update_balance = $conn->prepare("UPDATE Members SET redhawk_balance = redhawk_balance - ? WHERE member_id = ?");
+            $update_balance->bind_param("di", $fine_amount, $member_id);
+            $update_balance->execute();
 
-if ($result->num_rows > 0) {
-    while ($row = $result->fetch_assoc()) {
-        echo "Borrowed ID: " . $row['borrowed_id'] . "<br>";
-        echo "Book Name: " . $row['book_name'] . "<br>";
-        echo "Borrow Date: " . $row['borrow_date'] . "<br>";
-        echo "Return Date: " . $row['return_date'] . "<br>";
-        echo "Status: " . $row['status'] . "<br>";
-        echo "<form method='post' action=''>
-                <input type='hidden' name='borrowed_id' value='" . $row['borrowed_id'] . "'>
-                <button type='submit' name='return_book'>Return Book</button>
-              </form>";
-        echo "<hr>";
+            $conn->commit();
+            $_SESSION['message'] = "✅ Fine paid successfully using Red-Hawk Dollars.";
+            header("Location: borrowReturn.php");
+            exit();
+        } else {
+            $message = "❌ Not enough Red-Hawk Dollars to pay the fine.";
+        }
     }
-} else {
-    echo "No books currently borrowed.";
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['book_name'])) {
-    $book_name = $_POST['book_name'];
+// Auto update overdue transactions
+$conn->query("UPDATE Transactions SET borrowStatus = 'Overdue' WHERE borrowStatus = 'Issued' AND due_date < CURDATE()");
 
-    $query = "SELECT book_id, title, author, available_copies FROM Books WHERE title LIKE ?";
-    $stmt = $mysqli->prepare($query);
-    $book_name_like = '%' . $book_name . '%';
-    $stmt->bind_param('s', $book_name_like);
-    $stmt->execute();
-    $result = $stmt->get_result();
+// Insert fine for overdue if not already
+$conn->query("INSERT INTO Fines (member_id, book_id, fine_amount, paid_status, created_at)
+    SELECT T.member_id, T.book_id, 30, 'unpaid', NOW()
+    FROM Transactions T
+    WHERE T.borrowStatus = 'Overdue'
+      AND NOT EXISTS (
+          SELECT 1 FROM Fines F
+          WHERE F.member_id = T.member_id AND F.book_id = T.book_id AND F.paid_status = 'unpaid'
+      )");
+
+// Auto-charge Red-Hawk Dollars for unpaid fines older than 7 days
+$auto_charge_query = $conn->query("SELECT F.fine_id, F.member_id, F.fine_amount, F.created_at, M.redhawk_balance
+    FROM Fines F
+    JOIN Members M ON F.member_id = M.member_id
+    WHERE F.paid_status = 'unpaid'");
+
+while ($row = $auto_charge_query->fetch_assoc()) {
+    $created_at = new DateTime($row['created_at']);
+    $today = new DateTime();
+    $days_diff = $today->diff($created_at)->days;
+
+    if ($days_diff > 7) {
+        $total_fine = $row['fine_amount'] + 10;
+        if ($row['redhawk_balance'] >= $total_fine) {
+            $update_fine = $conn->prepare("UPDATE Fines SET fine_amount = ?, paid_status = 'paid' WHERE fine_id = ?");
+            $update_fine->bind_param("di", $total_fine, $row['fine_id']);
+            $update_fine->execute();
+
+            $deduct_stmt = $conn->prepare("UPDATE Members SET redhawk_balance = redhawk_balance - ? WHERE member_id = ?");
+            $deduct_stmt->bind_param("di", $total_fine, $row['member_id']);
+            $deduct_stmt->execute();
+        }
+    }
+}
+
+// Librarian sets book as returned
+if ($isLibrarian && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_returned'])) {
+    $trans_id = $_POST['transaction_id'] ?? null;
+    if ($trans_id) {
+        $stmt = $conn->prepare("UPDATE Transactions SET return_date = CURDATE(), borrowStatus = 'Returned' WHERE transaction_id = ?");
+        $stmt->bind_param("i", $trans_id);
+        $stmt->execute();
+    }
+}
+
+// Member borrows a book
+if ($isMember && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['google_id'])) {
+    $google_id = $_POST['google_id'];
+    $title = $_POST['title'] ?? 'Untitled';
+    $author = $_POST['author'] ?? 'Unknown';
+
+    $check_stmt = $conn->prepare("SELECT book_id FROM Books WHERE google_id = ?");
+    $check_stmt->bind_param("s", $google_id);
+    $check_stmt->execute();
+    $result = $check_stmt->get_result();
 
     if ($result->num_rows > 0) {
         $book = $result->fetch_assoc();
-        if ($book['available_copies'] > 0) {
-            $book_id = $book['book_id'];
-            $borrow_date = date('Y-m-d');
-            $return_date = date('Y-m-d', strtotime('+14 days'));
-
-            $query = "INSERT INTO BorrowedBooks (member_id, book_id, borrow_date, return_date, status) 
-                      VALUES (?, ?, ?, ?, 'Borrowed')";
-            $stmt = $mysqli->prepare($query);
-            $stmt->bind_param('iiss', $member_id, $book_id, $borrow_date, $return_date);
-            if ($stmt->execute()) {
-                $query = "UPDATE Books SET available_copies = available_copies - 1 WHERE book_id = ?";
-                $stmt = $mysqli->prepare($query);
-                $stmt->bind_param('i', $book_id);
-                $stmt->execute();
-
-                echo "Successfully borrowed the book: " . $book['title'];
-            } else {
-                echo "Error borrowing the book.";
-            }
-        } else {
-            echo "Sorry, no copies available for this book.";
-        }
+        $book_id = $book['book_id'];
     } else {
-        echo "Book not found!";
+        $insert_stmt = $conn->prepare("INSERT INTO Books (google_id, title, author, availability) VALUES (?, ?, ?, 'available')");
+        $insert_stmt->bind_param("sss", $google_id, $title, $author);
+        $insert_stmt->execute();
+        $book_id = $conn->insert_id;
+    }
+
+    $check_existing = $conn->prepare("SELECT * FROM Transactions WHERE member_id = ? AND book_id = ? AND borrowStatus = 'Issued'");
+    $check_existing->bind_param("ii", $member_id, $book_id);
+    $check_existing->execute();
+    $existing = $check_existing->get_result();
+
+    if ($existing->num_rows === 0) {
+        $borrow_stmt = $conn->prepare("INSERT INTO BorrowedBooks (member_id, book_id, borrow_date) VALUES (?, ?, NOW())");
+        $borrow_stmt->bind_param("ii", $member_id, $book_id);
+        $borrow_stmt->execute();
+
+        $update_stmt = $conn->prepare("UPDATE Books SET availability = 'unavailable' WHERE book_id = ?");
+        $update_stmt->bind_param("i", $book_id);
+        $update_stmt->execute();
+
+        $transaction_stmt = $conn->prepare("INSERT INTO Transactions (book_id, member_id, librarian_id, issue_date, due_date, borrowStatus) VALUES (?, ?, NULL, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 14 DAY), 'Issued')");
+        $transaction_stmt->bind_param("ii", $book_id, $member_id);
+        $transaction_stmt->execute();
+
+        $message = "✅ Book borrowed successfully!";
+    } else {
+        $message = "⚠️ You already have this book borrowed.";
     }
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['return_book'])) {
-    $borrowed_id = $_POST['borrowed_id'];
-
-    $query = "UPDATE BorrowedBooks SET status = 'Returned' WHERE borrowed_id = ?";
-    $stmt = $mysqli->prepare($query);
-    $stmt->bind_param('i', $borrowed_id);
-    if ($stmt->execute()) {
-        $query = "SELECT book_id FROM BorrowedBooks WHERE borrowed_id = ?";
-        $stmt = $mysqli->prepare($query);
-        $stmt->bind_param('i', $borrowed_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $book = $result->fetch_assoc();
-        
-        if ($book) {
-            $query = "UPDATE Books SET available_copies = available_copies + 1 WHERE book_id = ?";
-            $stmt = $mysqli->prepare($query);
-            $stmt->bind_param('i', $book['book_id']);
-            $stmt->execute();
-            
-            echo "Successfully returned the book.";
-        }
-    } else {
-        echo "Error returning the book.";
-    }
+// Fetch borrowed books
+if ($isMember) {
+    $borrowed_query = $conn->prepare("SELECT B.book_id, B.title, B.author, BB.borrow_date, T.due_date, T.return_date, T.transaction_id
+        FROM BorrowedBooks BB
+        JOIN Books B ON BB.book_id = B.book_id
+        JOIN Transactions T ON T.book_id = BB.book_id AND T.member_id = BB.member_id
+        WHERE BB.member_id = ?
+        ORDER BY BB.borrow_date DESC");
+    $borrowed_query->bind_param("i", $member_id);
+    $borrowed_query->execute();
+    $borrowed_books = $borrowed_query->get_result();
+} else {
+    $borrowed_books = $conn->query("SELECT M.name AS member_name, B.title, B.author, T.issue_date, T.due_date, T.return_date, T.borrowStatus, T.transaction_id, M.member_id, B.book_id FROM Transactions T JOIN Books B ON T.book_id = B.book_id JOIN Members M ON T.member_id = M.member_id ORDER BY T.issue_date DESC");
 }
 ?>
 
-<form method="post" action="">
-    <label for="book_name">Enter Book Name:</label>
-    <input type="text" name="book_name" required>
-    <button type="submit">Borrow Book</button>
-</form>
+<!DOCTYPE html>
+<html>
+<head><title>Borrow/Return Books</title></head>
+<body>
+<?php include 'navbar.php'; ?>
+<h2><?= $isMember ? "Your Borrowed Books" : "All Borrowed Transactions" ?></h2>
+<?php if (isset($_SESSION['message'])): ?>
+    <p><strong><?= htmlspecialchars($_SESSION['message']) ?></strong></p>
+    <?php unset($_SESSION['message']); ?>
+<?php endif; ?>
+
+<?php if (isset($borrowed_books) && $borrowed_books->num_rows > 0): ?>
+<table border="1" cellpadding="5">
+    <tr>
+        <?php if (!$isMember): ?><th>User</th><?php endif; ?>
+        <th>Title</th><th>Author</th>
+        <th><?= $isMember ? "Borrow Date" : "Issued" ?></th>
+        <th>Due</th>
+        <th><?= $isMember ? "Fine" : "Returned" ?></th>
+        <?php if ($isMember): ?><th>Return Status</th><?php endif; ?>
+        <?php if (!$isMember): ?><th>Status</th><th>Fine</th><th>Fine Status</th><th>Action</th><?php endif; ?>
+    </tr>
+    <?php while ($row = $borrowed_books->fetch_assoc()): ?>
+    <tr>
+        <?php if (!$isMember): ?><td><?= htmlspecialchars($row['member_name']) ?></td><?php endif; ?>
+        <td><?= htmlspecialchars($row['title']) ?></td>
+        <td><?= htmlspecialchars($row['author']) ?></td>
+        <td><?= htmlspecialchars($isMember ? $row['borrow_date'] : $row['issue_date']) ?></td>
+        <td><?= htmlspecialchars($row['due_date']) ?></td>
+        <td>
+            <?php if ($isMember): ?>
+                <?php
+                $fine_query = $conn->prepare("SELECT fine_id, fine_amount, paid_status FROM Fines WHERE member_id = ? AND book_id = ? ORDER BY created_at DESC LIMIT 1");
+                $fine_query->bind_param("ii", $member_id, $row['book_id']);
+                $fine_query->execute();
+                $fine_result = $fine_query->get_result();
+
+                if ($fine_result && $fine_result->num_rows > 0) {
+                    $fine = $fine_result->fetch_assoc();
+                    $fine_amount = "$" . number_format($fine['fine_amount'], 2);
+
+                    if ($fine['paid_status'] === 'unpaid') {
+                        echo "<span style='color:red;'>Fine: {$fine_amount}</span>";
+                        echo "
+                            <form method='post' style='display:inline; margin-left:10px;'>
+                                <input type='hidden' name='book_id' value='{$row['book_id']}'>
+                                <button type='submit' name='pay_fine'>Pay</button>
+                            </form>
+                        ";
+                    } else {
+                        echo "<span style='color:green;'>Fine Paid: {$fine_amount}</span>";
+                    }
+                } else {
+                    echo "No fine";
+                }
+                ?>
+            <?php else: ?>
+                <?= $row['return_date'] ?? '—' ?>
+            <?php endif; ?>
+        </td>
+        <?php if ($isMember): ?>
+            <td>
+                <?php
+                $status_query = $conn->prepare("SELECT borrowStatus FROM Transactions WHERE member_id = ? AND book_id = ? ORDER BY issue_date DESC LIMIT 1");
+                $status_query->bind_param("ii", $member_id, $row['book_id']);
+                $status_query->execute();
+                $status_result = $status_query->get_result();
+                $status_row = $status_result->fetch_assoc();
+                echo htmlspecialchars($status_row['borrowStatus'] ?? 'N/A');
+                ?>
+            </td>
+        <?php endif; ?>
+        <?php if (!$isMember): ?>
+            <?php
+            $fine_query = $conn->prepare("SELECT fine_amount, paid_status FROM Fines WHERE member_id = ? AND book_id = ? ORDER BY created_at DESC LIMIT 1");
+            $fine_query->bind_param("ii", $row['member_id'], $row['book_id']);
+            $fine_query->execute();
+            $fine_result = $fine_query->get_result();
+            if ($fine_result && $fine_result->num_rows > 0) {
+                $fine = $fine_result->fetch_assoc();
+                $fine_amount = "$" . number_format($fine['fine_amount'], 2);
+                $fine_status = $fine['paid_status'];
+            } else {
+                $fine_amount = "$0.00";
+                $fine_status = "none";
+            }
+            ?>
+            <td><?= htmlspecialchars($row['borrowStatus']) ?></td>
+            <td><?= $fine_amount ?></td>
+            <td><?= $fine_status ?></td>
+            <td>
+                <?php if (is_null($row['return_date'])): ?>
+                    <form method="post">
+                        <input type="hidden" name="transaction_id" value="<?= $row['transaction_id'] ?>">
+                        <button type="submit" name="set_returned">Mark as Returned</button>
+                    </form>
+                <?php else: ?>
+                    —
+                <?php endif; ?>
+            </td>
+        <?php endif; ?>
+    </tr>
+    <?php endwhile; ?>
+</table>
+<?php else: ?>
+<p><?= $isMember ? "You haven't borrowed any books yet." : "No transactions found." ?></p>
+<?php endif; ?>
+</body>
+</html>

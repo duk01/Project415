@@ -1,5 +1,16 @@
 <?php
 session_start();
+require_once 'database.php';
+
+// Show fine warning if set
+$fineWarningHtml = "";
+if (isset($_SESSION['fine_warning'])) {
+    $fineWarningHtml = '
+    <div style="background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 10px; margin: 10px auto; max-width: 600px; text-align: center; border-radius: 5px;">
+        ' . $_SESSION['fine_warning'] . '
+    </div>';
+    unset($_SESSION['fine_warning']);
+}
 ?>
 
 <!DOCTYPE html>
@@ -8,7 +19,7 @@ session_start();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Library System - Home</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" 
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet"
           integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <style>
@@ -16,7 +27,7 @@ session_start();
             font-family: Arial, sans-serif;
             background-color: #f8f9fa;
         }
-        
+
         .frontP {
             background: url("lib.jpg") no-repeat center center/cover;
             height: 400px;
@@ -92,6 +103,7 @@ session_start();
                 font-size: 1.5rem;
                 height: 300px;
             }
+
             .feature-icon {
                 font-size: 40px;
             }
@@ -99,39 +111,41 @@ session_start();
     </style>
 </head>
 <body>
-    <?php include 'navbar.php'; ?>
-    <div class="frontP">
-        <span>Welcome to the University Library System</span>
-    </div>
+<?php include 'navbar.php'; ?>
+<?= $fineWarningHtml ?>
 
-    <div class="container">
-        <div class="row text-center">
-            <div class="col-md-4">
-                <div class="feature-card p-4">
-                    <div class="feature-icon">📖</div>
-                    <h4>Book Catalog</h4>
-                    <p>Browse our collection of books available in the library.</p>
-                    <a href="bookCatalog.php" class="btn btn-danger">View Books</a>
-                </div>
+<div class="frontP">
+    <span>Welcome to the University Library System</span>
+</div>
+
+<div class="container">
+    <div class="row text-center">
+        <div class="col-md-4">
+            <div class="feature-card p-4">
+                <div class="feature-icon">📖</div>
+                <h4>Book Catalog</h4>
+                <p>Browse our collection of books available in the library.</p>
+                <a href="bookCatalog.php" class="btn btn-danger">View Books</a>
             </div>
-            <div class="col-md-4">
-                <div class="feature-card p-4">
-                    <div class="feature-icon">🔄</div>
-                    <h4>Borrow & Return</h4>
-                    <p>Check out books or return borrowed items easily.</p>
-                    <a href="borrowReturn.php" class="btn btn-danger">Borrow/Return</a>
-                </div>
+        </div>
+        <div class="col-md-4">
+            <div class="feature-card p-4">
+                <div class="feature-icon">🔄</div>
+                <h4>Borrow & Return</h4>
+                <p>Check out books or return borrowed items easily.</p>
+                <a href="borrowReturn.php" class="btn btn-danger">Borrow/Return</a>
             </div>
-            <div class="col-md-4">
-                <div class="feature-card p-4">
-                    <div class="feature-icon">📜</div>
-                    <h4>FAQ</h4>
-                    <p>----</p>
-                    <a href="FAQ.php" class="btn btn-danger">FAQ</a>
-                </div>
+        </div>
+        <div class="col-md-4">
+            <div class="feature-card p-4">
+                <div class="feature-icon">📜</div>
+                <h4>Have Questions?</h4>
+                <p>Librarians are here to help</p>
+                <a href="FAQ.php" class="btn btn-danger">Ask Us</a>
             </div>
         </div>
     </div>
+</div>
 
 </body>
 </html>

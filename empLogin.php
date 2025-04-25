@@ -3,7 +3,7 @@ session_start();
 
 $servername = "localhost";
 $username = "root";
-$password = "csit355pass";
+$password = "";
 $dbname = "libraryDB";
 $conn = new mysqli($servername, $username, $password, $dbname);
 
@@ -20,27 +20,25 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         exit;
     }
 
-    $query = "SELECT name, password FROM Librarians WHERE email = ?";
+    // Compare SHA-256 hashed input to stored password
+    $password = hash('sha256', $password);
+
+    $query = "SELECT name, password FROM Librarians WHERE email = ? AND password = ?";
     $stmt = $conn->prepare($query);
-    $stmt->bind_param("s", $email);
+    $stmt->bind_param("ss", $email, $password);
     $stmt->execute();
     $result = $stmt->get_result();
 
     if ($result->num_rows > 0) {
         $user = $result->fetch_assoc();
-        
-        if (hash('sha256', $password) === $user['password']) {
-            $_SESSION['email'] = $email;
-            $_SESSION['name'] = $user['name'];
+        $_SESSION['email'] = $email;
+        $_SESSION['name'] = $user['name'];
+        $_SESSION['is_librarian'] = true;
 
-            header("Location: index.php");
-            exit;
-        } else {
-            header("Location: empLogin.php?error=Incorrect password");
-            exit;
-        }
+        header("Location: index.php");
+        exit;
     } else {
-        header("Location: empLogin.php?error=User not found");
+        header("Location: empLogin.php?error=Invalid email or password");
         exit;
     }
 }
@@ -53,7 +51,7 @@ $conn->close();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
+    <title>Staff Login</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -77,14 +75,14 @@ $conn->close();
         button {
             width: 100%;
             padding: 10px;
-            background-color: #28a745;
+            background-color: red;
             border: none;
             color: white;
             border-radius: 5px;
             cursor: pointer;
         }
         button:hover {
-            background-color: #218838;
+            background-color: darkred;
         }
         .error {
             color: red;
@@ -93,14 +91,13 @@ $conn->close();
 </head>
 <body>
     <div class="login-container">
-        <h2>Login</h2>
+        <h2>Staff Login</h2>
         <?php if (!empty($_GET['error'])) echo "<p class='error'>{$_GET['error']}</p>"; ?>
         <form action="" method="POST">
             <input type="email" name="email" placeholder="Email" required>
             <input type="password" name="password" placeholder="Password" required>
             <button type="submit">Login</button>
         </form>
-        <a href="empLogin.php">Are you a librarian? Click Here.</a>
     </div>
 </body>
 </html>
